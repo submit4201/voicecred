@@ -8,19 +8,16 @@ import wave
 
 # Ensure local src/ is on PYTHONPATH so this script can be run directly
 HERE = os.path.dirname(os.path.dirname(__file__))
-# Add repo root so imports referencing `src.voicecred` will resolve
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
 SRC = os.path.join(HERE, 'src')
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
-from voicecred.session import InMemorySessionStore
-from voicecred.acoustic import AcousticEngine
-from voicecred.stt import MockSTTAdapter, create_stt_adapter, create_speaker_adapter
-from voicecred.linguistic import LinguisticEngine
-from voicecred.assembler import assemble_feature_frame
-from voicecred.scorer import Scorer
-from voicecred.utils import baseline as baseline_utils
+from src.voicecred.session import InMemorySessionStore
+from src.voicecred.acoustic import AcousticEngine
+from src.voicecred.stt import MockSTTAdapter, create_stt_adapter
+from src.voicecred.linguistic import LinguisticEngine
+from src.voicecred.assembler import assemble_feature_frame
+from src.voicecred.scorer import Scorer
+from src.voicecred.utils import baseline as baseline_utils
 
 
 def read_wav_as_int16(path):
@@ -70,18 +67,6 @@ def main(wav_path="download.wav"):
     ling = LinguisticEngine()
     scorer = Scorer()
 
-    # optional speaker recognition adapter — run diarization in background
-    speaker_adapter = create_speaker_adapter(os.environ.get('SPEAKER_ADAPTER', 'mock'))
-    from concurrent.futures import ThreadPoolExecutor
-    executor = ThreadPoolExecutor(max_workers=2)
-    speaker_future = None
-    try:
-        # If adapter supports file path recognition, run on full WAV in background
-        if speaker_adapter and hasattr(speaker_adapter, 'recognize'):
-            speaker_future = executor.submit(lambda: speaker_adapter.recognize(wav_path))
-    except Exception:
-        speaker_future = None
-
     pcm_bytes, sr = read_wav_as_int16(wav_path)
     chunks = chunk_bytes(pcm_bytes, sr, chunk_ms=200)
 
@@ -99,51 +84,20 @@ def main(wav_path="download.wav"):
     for a in acoustics[:3]:
         print(a)
 
-    # STT & linguistic: process per-batch windows so linguistic features vary
+    # STT: pass frames to adapter
+    asr = stt.transcribe(frames)
+    print("ASR result summary:", {"raw_len": len(asr.get('raw') or ''), "confidence": asr.get('confidence')})
+
+    # linguistic
+    ling_res = ling.analyze(asr, timestamp_ms=acoustics[0].timestamp_ms if acoustics else 0)
+    print("Linguistic results keys:", list(ling_res.linguistic.keys()))
+
+    # assemble feature frames
     feature_frames = []
-    batch_size = 4  # group 4 acoustic frames (e.g. 800ms windows) per STT/linguistic pass
-    print(f"Running STT + linguistic analysis in batches of {batch_size} frames")
-    for i in range(0, len(acoustics), batch_size):
-        batch = acoustics[i:i + batch_size]
-        if not batch:
-            continue
-        # pass the corresponding input frames (timestamps and pcm are available in frames list)
-        # Map to the original frames slice (same indexes)
-        # The STT adapter expects the list-of-frame dicts structure, so supply similar dicts
-        frame_slice = frames[i:i + batch_size]
-        # If using the mock STT adapter, inject a deterministic per-batch
-        # `transcript_override` so the linguistic metrics vary across batches.
-        # This prevents the mock's default static transcript from repeating
-        # on every batch and yielding identical linguistic stats (which lead
-        # to zero z-scores). For real adapters this won't be used.
-        if hasattr(stt, '__class__') and stt.__class__.__name__ == 'MockSTTAdapter':
-            # create a small pseudo-transcript that varies by batch index
-            words = [f"w{(i + j) % 100}" for j in range(3 + (i % 5))]
-            # attach an override to the first frame in the slice
-            if isinstance(frame_slice, list) and frame_slice:
-                frame_slice[0] = dict(frame_slice[0])
-                frame_slice[0]["transcript_override"] = " ".join(words)
-        asr = stt.transcribe(frame_slice)
-        print("ASR batch summary:", {"raw_len": len(asr.get('raw') or ''), "confidence": asr.get('confidence')})
-        ling_res = ling.analyze(asr, timestamp_ms=(batch[0].timestamp_ms if batch else 0))
-        print("Linguistic keys batch:", list(ling_res.linguistic.keys()))
-
-        # if background speaker diarization has finished, fetch results to attach
-        spk_res = None
-        if speaker_future and speaker_future.done():
-            try:
-                spk_all = speaker_future.result()
-                spk_res = spk_all.get('segments') if isinstance(spk_all, dict) else None
-            except Exception:
-                spk_res = None
-
-        for r in batch:
-            qc = dict(r.qc) if isinstance(r.qc, dict) else {}
-            if spk_res:
-                qc['speaker_segments'] = spk_res
-            feat = assemble_feature_frame(sid, {"acoustic": r.acoustic, "qc": qc}, ling_res.linguistic, r.timestamp_ms)
-            feat.setdefault('normalized', {})
-            feature_frames.append(feat)
+    for r in acoustics:
+        feat = assemble_feature_frame(sid, {"acoustic": r.acoustic, "qc": r.qc}, ling_res.linguistic, r.timestamp_ms)
+        feat.setdefault('normalized', {})
+        feature_frames.append(feat)
 
     print(f"Assembled {len(feature_frames)} feature frames. Computing baseline (if enough frames)...")
     # compute baseline if enough

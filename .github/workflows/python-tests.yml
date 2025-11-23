@@ -1,0 +1,55 @@
+name: CI - Python tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  # allow manual invocation to run heavy tests (requires repo secrets/HF_HUB_TOKEN for private model access)
+  workflow_dispatch:
+    inputs:
+      run_heavy:
+        description: "Run heavy tests that load pyannote/audio (requires HF_HUB_TOKEN)"
+        required: false
+        default: 'false'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        env:
+          # prevent heavy pyannote tests from running by default in CI
+          RUN_HEAVY_PYANNOTE: '0'
+        run: |
+          pytest -q
+
+  heavy-tests:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_heavy == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run heavy pyannote tests
+        env:
+          RUN_HEAVY_PYANNOTE: '1'
+          # HF token should be added to repo secrets if private models are used
+          HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_HUB_TOKEN }}
+        run: |
+          pytest -q

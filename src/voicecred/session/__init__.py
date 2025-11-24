@@ -169,8 +169,7 @@ class InMemorySessionStore:
             s.transcripts.append(transcript)
 
     def add_linguistic(self, session_id: str, ling: Dict):
-        s = self.get(session_id)
-        if s:
+        if s := self.get(session_id):
             s.linguistic_frames.append(ling)
 
     def pop_frames(self, session_id: str) -> List[Dict]:

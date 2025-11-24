@@ -1,13 +1,11 @@
 from __future__ import annotations
 from src.voicecred.utils.logger_util import get_logger, logging
-logger=get_logger(__name__,logging.DEBUG)
 from typing import Any, Dict, Optional
 import time
 from collections import OrderedDict
 from src.voicecred.schemas.envelope import EnvelopeV1
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, logging.DEBUG)
 
 
 class WindowRecord:
@@ -151,7 +149,7 @@ class WindowBuffer:
 
         # make the assembled timestamp deterministic when feature provides a
         # timestamp_ms — this makes assembly order independent in tests
-        assembled_at = ts if ts else int(record.created_at * 1000)
+        assembled_at = ts or int(record.created_at * 1000)
 
         envelope: Dict[str, Any] = {
             "version": "v1",

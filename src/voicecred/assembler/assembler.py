@@ -57,11 +57,15 @@ class Assembler:
             action = res.get("action")
             envelope = res.get("envelope")
             # publish to ui_out channel for clients to receive diffs/assembly results
+            # The actual revision is tracked on the buffer record, but that isn't directly exposed here.
+            # We can use the revision from the buffer result if available (res['revision']),
+            # or fall back to envelope meta.
             out_payload = {
                 "action": action,
                 "window_id": window_id,
-                "revision": getattr(envelope, 'meta', {}).get('revision', None),
-                "envelope": envelope.model_dump() if hasattr(envelope, 'model_dump') else envelope
+                # Prefer the revision reported by buffer (which comes from WindowRecord), fall back to envelope meta
+                "revision": res.get("revision", getattr(envelope, "meta", {}).get("revision", None)),
+                "envelope": envelope.model_dump() if hasattr(envelope, "model_dump") else envelope
             }
             ok = await self.bus.publish(session_id, "ui_out", out_payload, block=False)
             logger.debug("published ui_out (out_payload) for session %s ok=%s", session_id, ok)

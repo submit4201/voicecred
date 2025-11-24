@@ -16,7 +16,7 @@ Quick, focused instructions so an AI coding assistant can be productive right aw
    - ASR gating: `MIN_ASR_CONF` in `main.py` controls whether linguistic analysis runs for a batch (default 0.6).
    - Debugging: set `VOICECRED_DEBUG=1` for DEBUG level logs.
    - External integrations are optional: `parselmouth`, `numpy`, `spacy`, `pyannote.audio` are used when installed — code has fallbacks for tests.
-   - Hugging Face token: `HF_API_KEY` or `HUGGINGFACE_HUB_TOKEN` used by pyannote adapter.
+   - Hugging Face token: `HF_API_KEY` or `HUGGINGFACE_HUB_TOKEN` are used by the pyannote adapter.
 
 4. Baseline & calibration behavior (tests and production differences)
    - `InMemorySessionStore.compute_and_store_baseline()` requires at least `min_frames` (default 3). QC gating applies (speech_ratio, voiced_seconds, SNR) to accept frames for baseline.

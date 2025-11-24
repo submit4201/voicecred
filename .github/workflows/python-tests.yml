@@ -17,6 +17,10 @@ jobs:
   tests:
     runs-on: [self-hosted, windows, x64]
     steps:
+      - name: Allow PowerShell scripts (Windows only)
+      - if: runner.os == 'Windows'
+        shell: powershell
+        run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
       - uses: actions/checkout@v4
       - name: Set up Python 3.11
         uses: actions/setup-python@v5

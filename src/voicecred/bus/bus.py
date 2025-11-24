@@ -46,6 +46,7 @@ class EventBus:
         "window_buffer",
         "ui_out",
         "ops_events",
+        "score_events",
     ]
 
     def __init__(self, default_maxsize: int = 100):

@@ -18,6 +18,10 @@ def test_envelope_missing_qc_fails():
 
 
 def test_qc_invalid_ranges():
+    # snr_db out of bounds
+    with pytest.raises(ValidationError):
+        QC(snr_db=1000.0, speech_ratio=0.5, voiced_seconds=0.1)
+
     # speech_ratio out of bounds
     with pytest.raises(ValidationError):
         QC(snr_db=0.0, speech_ratio=1.5, voiced_seconds=0.1)

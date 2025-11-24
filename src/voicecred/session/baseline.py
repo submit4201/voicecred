@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from src.voicecred.utils.baseline import compute_median_mad
 import math
 
 
-def compute_baseline_from_frames(frames: List[Dict[str, Any]], min_frames: int | None = 3, qc_gate_min_speech_ratio: float = 0.2, qc_gate_min_voiced_seconds: float = 0.05) -> Dict[str, Dict[str, Any]]:
+def compute_baseline_from_frames(
+    frames: List[Dict[str, Any]],
+    min_frames: int | None = 3,
+    qc_gate_min_speech_ratio: float = 0.2,
+    qc_gate_min_voiced_seconds: float = 0.05,
+    *,
+    use_production_policy: bool = False,
+    min_voiced_seconds: float | None = None,
+) -> Dict[str, Dict[str, Any]]:
     """Compute median/MAD baseline across provided frames.
 
     frames: list of feature dicts with keys like 'acoustic', 'linguistic', 'derived', 'qc'.
@@ -14,15 +22,25 @@ def compute_baseline_from_frames(frames: List[Dict[str, Any]], min_frames: int |
     # if frames list empty -> nothing to compute
     if not frames:
         return {}
-    # if min_frames provided, require that we have at least that many frames
-    if min_frames is not None and len(frames) < min_frames:
-        return {}
+
+    # If production policy is enabled, require a minimum total voiced_seconds
+    if use_production_policy:
+        total_voiced = 0.0
+        for f in frames:
+            qc = f.get("qc") if isinstance(f, dict) else None
+            try:
+                total_voiced += float(qc.get("voiced_seconds", 0.0) or 0.0) if isinstance(qc, dict) else 0.0
+            except Exception:
+                pass
+        # Not enough voiced seconds to compute a production baseline
+        if min_voiced_seconds is not None and total_voiced < float(min_voiced_seconds):
+            return {}
 
     # QC-gating similar to store: keep frames that meet at least one QC condition
     kept = []
     for f in frames:
         qc = f.get("qc") if isinstance(f, dict) else None
-        accept = True if not isinstance(qc, dict) else False
+        accept = False if isinstance(qc, dict) else True
         if isinstance(qc, dict):
             try:
                 sr = float(qc.get("speech_ratio", 0.0))

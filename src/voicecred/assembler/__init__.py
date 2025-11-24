@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Dict, Any
 
-
+# Keep the legacy helper at the package root for backwards compatibility.
 def assemble_feature_frame(session_id: str, acoustic: Dict[str, Any], linguistic: Dict[str, Any] | None, timestamp_ms: int) -> Dict[str, Any]:
     """Combine acoustic and linguistic results into a unified feature frame dict.
 
-    Keeps schema compatible with feature_version v1.
+    Kept here for backwards compatibility with existing code and tests.
     """
     feature = {
         "feature_version": 1,
@@ -63,3 +63,7 @@ def assemble_feature_frame(session_id: str, acoustic: Dict[str, Any], linguistic
             # best effort — don't fail if qc contains unexpected types
             pass
     return feature
+
+# Re-export the buffer/assembler modules from the package
+from .buffer import WindowBuffer
+from .assembler import Assembler

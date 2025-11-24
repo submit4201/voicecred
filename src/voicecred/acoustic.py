@@ -1,8 +1,8 @@
 from __future__ import annotations
 import logging
 from typing import List, Dict, Any, Optional
-from src.voicecred.utils.logger_util import get_logger
-logger = get_logger(__name__, logging.DEBUG)
+from src.voicecred.utils.logger_util import get_logger, logging
+logger=get_logger(__name__,logging.DEBUG)
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import math

@@ -31,21 +31,22 @@ jobs:
           # prevent heavy pyannote tests from running by default in CI
           RUN_HEAVY_PYANNOTE: '0'
         run: |
-          pytest -q
+           python -m pytest tests/
 
   heavy-tests:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_heavy == 'true' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12.9'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # check for test
       - name: Run heavy pyannote tests
         env:
           RUN_HEAVY_PYANNOTE: '1'

@@ -1,58 +1,69 @@
-"""
-conftest.py
-
-Make the project's src/ importable for tests and (optionally) add a local venv's
-site-packages to sys.path if it exists. This avoids forcing a process exec or
-mutating PYTHONHOME/PYTHONPATH in a brittle way.
-"""
-
-from pathlib import Path
-import sys
-import site
 import os
+import base64
+import time
+from typing import Any, Dict, Callable
+import pytest
+from fastapi.testclient import TestClient
 
-# Project root is the parent of this tests directory
-ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "src"
+# tests/conftest.py
 
-# Optional: path to a local venv. Can be overridden by environment var VC_VENV.
-# Default kept for compatibility with your original layout.
-DEFAULT_VENV = Path(r"C:\workspace\voicecred\.conda")
-VENV = Path(os.environ.get("VC_VENV", str(DEFAULT_VENV)))
 
-def _venv_site_packages(venv_path: Path):
-    """Return the site-packages path for a venv if it exists, else None."""
-    if not venv_path.exists():
-        return None
+import voicecred.main as main_mod
 
-    # Windows venv layout
-    win_sp = venv_path / "Lib" / "site-packages"
-    if win_sp.exists():
-        return str(win_sp)
+# Ensure tests use deterministic mock STT adapter unless explicitly overridden
+os.environ.setdefault("STT_ADAPTER", "mock")
+os.environ.setdefault("VOICECRED_DEBUG", "0")
 
-    # POSIX venv layout: lib/pythonX.Y/site-packages
-    py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    posix_sp = venv_path / "lib" / py_ver / "site-packages"
-    if posix_sp.exists():
-        return str(posix_sp)
+@pytest.fixture(scope="session")
+def app():
+    """FastAPI app instance."""
+    return main_mod.app
 
-    return None
+@pytest.fixture
+def client(app) -> TestClient:
+    """TestClient for the FastAPI app."""
+    return TestClient(app)
 
-# Add src first so tests import project packages before installed ones
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+def _encode_pcm_bytes(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
 
-# If a venv site-packages is present, add it (after src) so tests can find deps
-venv_sp = _venv_site_packages(VENV)
-if venv_sp and venv_sp not in sys.path:
-    sys.path.insert(1, venv_sp)
-    # Also register with site for pkgutil/stdlib friendliness
-    site.addsitedir(venv_sp)
+@pytest.fixture
+def make_pcm_frame() -> Callable[[int, str], Dict[str, Any]]:
+    """
+    Return a helper to construct a PCM frame dict suitable for WebSocket sends.
+    Usage: frame = make_pcm_frame(duration_ms=20, transcript_override="hello")
+    """
+    def _make(duration_ms: int = 20, transcript_override: str = None) -> Dict[str, Any]:
+        # Create a small chunk of silence (16kHz, 16-bit mono -> 2 bytes per sample)
+        samples = int(16000 * (duration_ms / 1000.0))
+        raw = b"\x00\x00" * samples
+        frame = {"pcm": _encode_pcm_bytes(raw)}
+        if transcript_override is not None:
+            frame["transcript_override"] = transcript_override
+        return frame
+    return _make
 
-# Helpful debug info when running pytest with -q/--capture=tee-sys suppressed:
-if os.environ.get("PYTEST_ADD_SYS_PATH_DEBUG"):
-    print("conftest: ROOT =", ROOT)
-    print("conftest: SRC =", SRC)
-    print("conftest: VENV =", VENV)
-    print("conftest: venv site-packages =", venv_sp)
-    print("conftest: sys.path[0:5] =", sys.path[:5])
+@pytest.fixture
+def recv_with_timeout():
+    """
+    Helper to receive JSON from a TestClient WebSocket with a timeout.
+    Usage: msg = recv_with_timeout(ws, timeout=2.0)
+    """
+    def _recv(ws, timeout: float = 2.0):
+        try:
+            return ws.receive_json(timeout=timeout)
+        except Exception as exc:
+            pytest.fail(f"Timed out waiting for websocket message (timeout={timeout}): {exc}")
+    return _recv
+
+@pytest.fixture(autouse=True)
+def isolate_env(monkeypatch):
+    """
+    Ensure certain environment keys are stable across tests and provide a place
+    to monkeypatch additional env vars in individual tests.
+    """
+    monkeypatch.setenv("STT_ADAPTER", os.environ.get("STT_ADAPTER", "mock"))
+    monkeypatch.setenv("VOICECRED_DEBUG", os.environ.get("VOICECRED_DEBUG", "0"))
+    # Allow tests to override heavy integrations via env flags
+    monkeypatch.setenv("RUN_HEAVY_PYANNOTE", os.environ.get("RUN_HEAVY_PYANNOTE", "false"))
+    yield

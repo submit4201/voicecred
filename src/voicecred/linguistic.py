@@ -7,7 +7,8 @@ import math
 import logging
 import time
 
-logger = logging.getLogger(__name__)
+from src.voicecred.utils.logger_util import get_logger, logging
+logger=get_logger(__name__,logging.DEBUG)
 
 try:
     import spacy

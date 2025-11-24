@@ -5,11 +5,8 @@ These helpers implement median/MAD based normalization which is robust to outlie
 from typing import Iterable, Tuple, List
 from collections import deque
 import math
-import logging
-
-logger = logging.getLogger(__name__)
-
-
+from src.voicecred.utils.logger_util import get_logger, logging
+logger=get_logger(__name__,logging.DEBUG)
 def compute_median_mad(values: Iterable[float]) -> Tuple[float, float]:
     """Compute the median and MAD (median absolute deviation) for values.
 

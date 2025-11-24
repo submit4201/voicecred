@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
-
+from src.voicecred.utils.logger_util import get_logger, logging
+logger=get_logger(__name__,logging.DEBUG)
 # NOTE: In prod, keep keys in secure secret store
 JWT_SECRET = "dev-secret-key-please-change"
 JWT_ALG = "HS256"

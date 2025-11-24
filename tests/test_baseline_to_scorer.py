@@ -24,7 +24,7 @@ async def test_baseline_ready_triggers_scoring():
             await asyncio.sleep(0.01)
 
         if sid not in vcmain.scorer_tasks or sid not in vcmain.scorer_ready:
-             raise AssertionError(f"scorer_ready was not populated for session {sid!r}")
+            raise AssertionError(f"scorer_ready was not populated for session {sid!r}")
 
         # prepare a feature frame and add it to the store so scorer has something to score
         feature = {

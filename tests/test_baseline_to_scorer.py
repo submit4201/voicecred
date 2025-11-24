@@ -1,26 +1,30 @@
-import time
+import pytest
+from httpx import AsyncClient, ASGITransport
 import asyncio
+import time
 
-from fastapi.testclient import TestClient
-
-
-def test_baseline_ready_triggers_scoring():
+@pytest.mark.anyio
+async def test_baseline_ready_triggers_scoring():
     import voicecred.main as vcmain
-    # start session
-    with TestClient(vcmain.app) as client:
-        r = client.post("/sessions/start")
+
+    # Use AsyncClient to ensure test runs in the same event loop as the app tasks
+    async with AsyncClient(transport=ASGITransport(app=vcmain.app), base_url="http://test") as client:
+        r = await client.post("/sessions/start")
         assert r.status_code == 200
         js = r.json()
         sid = js["session_id"]
         token = js.get("token")
 
-        # wait for scorer task to be started
-        start = time.monotonic()
-        while time.monotonic() - start < 1.0:
-            if sid in vcmain.scorer_tasks:
+        # wait for scorer task to be started and ready (subscribed to ops_events)
+        # yield to let background tasks start
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if sid in vcmain.scorer_tasks and sid in vcmain.scorer_ready:
                 break
-            time.sleep(0.01)
-        assert sid in vcmain.scorer_tasks
+            await asyncio.sleep(0.01)
+
+        if sid not in vcmain.scorer_tasks or sid not in vcmain.scorer_ready:
+             raise AssertionError(f"scorer_ready was not populated for session {sid!r}")
 
         # prepare a feature frame and add it to the store so scorer has something to score
         feature = {
@@ -33,44 +37,40 @@ def test_baseline_ready_triggers_scoring():
         }
         vcmain.store.add_feature_frame(sid, feature)
 
-        # now compute baseline from simple calib frames so store.baseline is populated
-        # create calib frames similar in structure to feature
+        # Pre-calculate a baseline so that when we send BaselineReady, the scorer can actually score
         s = vcmain.store.get(sid)
         s.calib_frames = [feature, feature, feature]
         b = vcmain.store.compute_and_store_baseline(sid, min_frames=1)
         assert b
 
-        # Instead of relying on background scorer timing (which can be
-        # variable in CI), invoke the scorer directly to produce a
-        # ScoreResult, publish it into the score_events channel and verify
-        # the ScoreUpdated payload contains contributions + explain metadata.
-        result = vcmain.scorer.compute(feature, vcmain.store.get_baseline(sid))
-        assert hasattr(result, "contributions") and isinstance(result.contributions, dict)
-        assert hasattr(result, "explain") and isinstance(result.explain, dict)
-
-        scoring_payload = {
-            "score": float(result.score),
-            "ci_lo": float(result.ci[0]),
-            "ci_hi": float(result.ci[1]),
-            "contributions": {k: float(v) for k, v in result.contributions.items()},
-            "explain": result.explain,
+        # Publish BaselineReady for this session on the ops_events bus
+        baseline_ready_event = {
+            "type": "BaselineReady",
+            "session_id": sid,
+            "token": token,
         }
-        out = {"type": "ScoreUpdated", "envelope": feature, "scoring": scoring_payload}
-        ok = asyncio.get_event_loop().run_until_complete(vcmain.bus.publish(sid, "score_events", out, block=False))
-        assert ok
+        # ops_events is a Channel, use publish helper from main or direct bus publish
+        # Since we are in the same loop, bus.publish is safe
+        await vcmain.bus.publish(sid, "ops_events", baseline_ready_event, block=False)
 
-        # check the score_events queue for a ScoreUpdated dict
-        ch = vcmain.bus.sessions.get(sid, {}).get("score_events")
-        assert ch is not None
-        snapshot = list(ch.q._queue)
-        found = None
-        for item in snapshot:
-            if isinstance(item, dict) and item.get("type") == "ScoreUpdated":
-                found = item
-                break
+        # Wait for a corresponding ScoreUpdated event on the score_events bus.
+        q = vcmain.bus.subscribe(sid, "score_events")
+        try:
+            # Wait with timeout
+            evt = await asyncio.wait_for(q.get(), timeout=5.0)
+        except asyncio.TimeoutError:
+            evt = None
 
-        assert found is not None, "expected ScoreUpdated in score_events"
-        scoring = found.get("scoring")
+        # handle both dict and Pydantic model if necessary (q.get returns dict usually from safe_publish)
+        if evt and hasattr(evt, "model_dump"):
+            evt = evt.model_dump()
+
+        assert evt is not None, "Timed out waiting for ScoreUpdated event"
+        # basic sanity assertions on the ScoreUpdated event
+        assert evt.get("type") == "ScoreUpdated"
+        # Scoring payload validation
+        scoring = evt.get("scoring")
+        assert scoring is not None
         assert "score" in scoring
-        assert "contributions" in scoring and isinstance(scoring.get("contributions"), dict)
-        assert "explain" in scoring and isinstance(scoring.get("explain"), dict)
+        assert "contributions" in scoring
+        assert "explain" in scoring

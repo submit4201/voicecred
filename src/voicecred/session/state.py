@@ -23,6 +23,6 @@ ALLOWED_TRANSITIONS = {
 
 def can_transition(from_state: SessionStates | str, to_state: SessionStates | str) -> bool:
     """Return True if a transition from from_state -> to_state is allowed."""
-    f = SessionStates(from_state) if not isinstance(from_state, SessionStates) else from_state
-    t = SessionStates(to_state) if not isinstance(to_state, SessionStates) else to_state
+    f = from_state if isinstance(from_state, SessionStates) else SessionStates(from_state)
+    t = to_state if isinstance(to_state, SessionStates) else SessionStates(to_state)
     return t in ALLOWED_TRANSITIONS.get(f, set())

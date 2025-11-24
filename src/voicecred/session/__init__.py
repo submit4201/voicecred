@@ -66,9 +66,7 @@ class InMemorySessionStore:
         return self._sessions.get(session_id)
 
     def update_last_seen(self, session_id: str):
-        s = self.get(session_id)
-        if s:
-            s.last_seen = datetime.now(timezone.utc)
+       if s := self.get(session_id):
 
     def set_state(self, session_id: str, state: str):
         s = self.get(session_id)

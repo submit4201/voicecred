@@ -118,6 +118,7 @@ def _stop_scorer_for_session(session_id: str):
 
 def ensure_session_bootstrapped(session_id: str):
     # ensure bus channels exist for this session
+    bus._ensure_session(session_id)
     for ch in SESSION_CHANNELS:
         try:
             bus.register_channel(session_id, ch)

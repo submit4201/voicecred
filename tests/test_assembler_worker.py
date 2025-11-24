@@ -3,6 +3,26 @@ import pytest
 import asyncio
 from fastapi.testclient import TestClient
 import queue
+import time
+
+def wait_for_message(ws, msg_type: str, timeout: float = 3.0):
+    """Helper to wait for a message of a specific type from the websocket.
+
+    Retries while the underlying websocket/queue indicates "no message yet"
+    (queue.Empty). Any other exception from ws.receive_json is allowed to
+    propagate so that unexpected websocket or protocol issues cause the test
+    to fail fast.
+    """
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        try:
+            msg = ws.receive_json()
+            if msg.get("type") == msg_type:
+                return msg.get("payload")
+        except queue.Empty:
+            # No message available yet; retry until timeout
+            time.sleep(0.01)
+    return None
 
 def test_assembler_worker_start_and_publish():
     """Start a session; publish a QC partial and a feature_frame to window_buffer and
@@ -63,16 +83,7 @@ def test_assembler_worker_start_and_publish():
                     pytest.fail(f"assembler task completed early, exception={exc}")
 
                 # consume messages from the websocket forwarder until we see a ui_diff payload
-                found = None
-                start = time.monotonic()
-                while time.monotonic() - start < 3.0:
-                    try:
-                        msg = ws.receive_json()
-                        if msg.get("type") == "ui_diff":
-                            found = msg.get("payload")
-                            break
-                    except Exception:
-                        time.sleep(0.01)
+                found = wait_for_message(ws, "ui_diff", timeout=3.0)
 
                 assert found is not None, "expected a ui_diff message from server websocket"
                 assert isinstance(found, dict)

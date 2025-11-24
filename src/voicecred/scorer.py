@@ -6,7 +6,8 @@ import math
 
 from src.voicecred.utils import baseline as baseline_utils
 
-
+from src.voicecred.utils.logger_util import get_logger, logging
+logger=get_logger(__name__,logging.DEBUG)
 @dataclass
 class ScoreResult:
     score: float

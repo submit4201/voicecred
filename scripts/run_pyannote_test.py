@@ -14,47 +14,62 @@ if SRC not in sys.path:
 
 from voicecred.stt import PyannoteSpeakerAdapter
 
-print('Starting pyannote speaker diarization test')
-# load model and run diarization on download.wav
 
-start = time.time()
-adapter = PyannoteSpeakerAdapter(model='pyannote/speaker-diarization-community-1', token=hf_api_key)
-print('adapter pipeline loaded:', adapter._pipeline is not None)
+def _main():
+    """Run a simple pyannote diarization against `download.wav`.
 
-# load audio into memory and pass as waveform dict to avoid torchcodec decoding
-#  {'waveform': (channel, time) torch.Tensor, 'sample_rate': int}
+    Everything is performed inside this function so importing the module
+    is safe during pytest collection.
+    """
+    print('Starting pyannote speaker diarization test')
 
-try:
-    # prefer torchaudio if available (returns waveform torch.Tensor in shape (channels, time))
+    start = time.time()
+    adapter = PyannoteSpeakerAdapter(model='pyannote/speaker-diarization-community-1', token=hf_api_key)
+    print('adapter pipeline loaded:', getattr(adapter, '_pipeline', None) is not None)
+
+    # load audio into memory and pass as waveform dict to avoid torchcodec decoding
+    # audio_dict: {'waveform': (channel, time) torch.Tensor or numpy array, 'sample_rate': int}
+    audio_dict = None
     try:
-        import torchaudio
-        waveform, samplerate = torchaudio.load('download.wav')
-        audio_dict = {"waveform": waveform, "sample_rate": int(samplerate)}
+        # prefer torchaudio if available (returns waveform torch.Tensor in shape (channels, time))
+        try:
+            import torchaudio
+
+            waveform, samplerate = torchaudio.load('download.wav')
+            audio_dict = {"waveform": waveform, "sample_rate": int(samplerate)}
+        except Exception:
+            # try soundfile which returns a numpy array
+            import soundfile as sf
+
+            data, samplerate = sf.read('download.wav')
+            audio_dict = {"waveform": data, "sample_rate": int(samplerate)}
     except Exception:
-        import soundfile as sf
-        data, samplerate = sf.read('download.wav')
-    channel = 1 if len(data.shape) == 1 else data.shape[1]
-    time = data.shape[0]
-    # pass numpy array into adapter so it can normalize/transpose to a (channels, time) torch.Tensor
-    audio_dict = {"waveform": data, "sample_rate": int(samplerate)}
-except Exception:
-    # fallback to wave module with numpy
-    import wave, array
-    with wave.open('download.wav', 'rb') as wf:
-        sr = wf.getframerate()
-        nchan = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        frames = wf.readframes(wf.getnframes())
-    import numpy as np
-    arr = np.frombuffer(frames, dtype='<i2')
-    if nchan > 1:
-        arr = arr.reshape(-1, nchan)
-    data = arr
-    samplerate = sr
-    audio_dict = {"waveform": data, "sample_rate": int(samplerate)}
-# run the pipeline locally on your computer
-# call the pipeline directly to inspect returned object for debug
-res = adapter.recognize(audio_dict)
-print('Diarization segments:')
-print(json.dumps(res, indent=2))
+        # fallback to wave module with numpy
+        import wave
+        import numpy as np
+
+        with wave.open('download.wav', 'rb') as wf:
+            sr = wf.getframerate()
+            nchan = wf.getnchannels()
+            frames = wf.readframes(wf.getnframes())
+        arr = np.frombuffer(frames, dtype='<i2')
+        if nchan > 1:
+            arr = arr.reshape(-1, nchan)
+        audio_dict = {"waveform": arr, "sample_rate": int(sr)}
+
+    if audio_dict is None:
+        print('Unable to load download.wav; aborting demo run')
+        return
+
+    # run the pipeline locally on your computer
+    try:
+        res = adapter.recognize(audio_dict)
+        print('Diarization segments:')
+        print(json.dumps(res, indent=2))
+    except Exception as exc:
+        print('Error running adapter:', str(exc))
+
+
+if __name__ == '__main__':
+    _main()
 

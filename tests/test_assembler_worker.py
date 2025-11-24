@@ -3,16 +3,24 @@ import pytest
 import asyncio
 from fastapi.testclient import TestClient
 import queue
+import time
 
 def wait_for_message(ws, msg_type: str, timeout: float = 3.0):
-    """Helper to wait for a message of a specific type from the websocket."""
+    """Helper to wait for a message of a specific type from the websocket.
+
+    Retries while the underlying websocket/queue indicates "no message yet"
+    (queue.Empty). Any other exception from ws.receive_json is allowed to
+    propagate so that unexpected websocket or protocol issues cause the test
+    to fail fast.
+    """
     start = time.monotonic()
     while time.monotonic() - start < timeout:
         try:
             msg = ws.receive_json()
             if msg.get("type") == msg_type:
                 return msg.get("payload")
-        except Exception:
+        except queue.Empty:
+            # No message available yet; retry until timeout
             time.sleep(0.01)
     return None
 

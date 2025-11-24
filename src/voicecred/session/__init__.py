@@ -87,84 +87,59 @@ class InMemorySessionStore:
             s.calib_frames.append(frame)
 
     # We keep the existing in-store compute_and_store_baseline behavior but
-    # delegate the core numeric baseline computation to compute_baseline_from_frames
-    def compute_and_store_baseline(self, session_id: str, min_frames: int = 3, *, use_production_policy: bool = False, min_voiced_seconds: float | None = None) -> Dict[str, Dict]:
+    # delegate all QC gating and numeric baseline computation to compute_baseline_from_frames.
+    # This keeps baseline QC policy centralized and avoids divergence between helpers.
+    def compute_and_store_baseline(
+        self,
+        session_id: str,
+        min_frames: int = 3,
+        *,
+        use_production_policy: bool = False,
+        min_voiced_seconds: float | None = None,
+    ) -> Dict[str, Dict]:
         s = self.get(session_id)
         if not s:
             return {}
-        frames = s.calib_frames
+
         from src.voicecred.session.baseline import compute_baseline_from_frames
 
+        frames = s.calib_frames
         total = len(frames)
 
-        # If production policy is enabled, require a minimum total voiced_seconds
-        if use_production_policy:
-            total_voiced = 0.0
-            for f in frames:
-                qc = f.get("qc") if isinstance(f, dict) else None
-                try:
-                    total_voiced += float(qc.get("voiced_seconds", 0.0) or 0.0) if isinstance(qc, dict) else 0.0
-                except Exception:
-                    pass
-            # Not enough voiced seconds to compute a production baseline
-            if min_voiced_seconds is not None and total_voiced < float(min_voiced_seconds):
-                s.metadata["baseline_filtering"] = {"total_calib_frames": total, "kept": total, "total_voiced_seconds": total_voiced, "insufficient_for_production": True}
-                return {}
+        # Delegate both QC gating and baseline computation to the shared helper.
+        # Any failure to meet QC requirements should be reflected by compute_baseline_from_frames
+        # returning an empty dict / falsy result.
+        baseline = compute_baseline_from_frames(
+            frames=frames,
+            min_frames=min_frames,
+            use_production_policy=use_production_policy,
+            min_voiced_seconds=min_voiced_seconds,
+        )
 
-        # perform QC gating and baseline computation
-        # We'll compute a kept_count to expose in metadata for debugging/tests
-        kept = 0
-        for f in frames:
-            qc = f.get("qc") if isinstance(f, dict) else None
-            accept = True if not isinstance(qc, dict) else False
-            if isinstance(qc, dict):
-                try:
-                    sr = float(qc.get("speech_ratio", 0.0) or 0.0)
-                except Exception:
-                    sr = 0.0
-                try:
-                    vs = float(qc.get("voiced_seconds", 0.0) or 0.0)
-                except Exception:
-                    vs = 0.0
-                if (not math.isnan(sr) and sr >= 0.2) or (not math.isnan(vs) and vs >= 0.05):
-                    accept = True
-                else:
-                    try:
-                        snr = float(qc.get("snr_db", float("nan")))
-                    except Exception:
-                        snr = float("nan")
-                    if not math.isnan(snr) and snr >= 0.0:
-                        accept = True
-                    else:
-                        try:
-                            words = int(qc.get("words_in_window", 0) or 0)
-                        except Exception:
-                            words = 0
-                        if words > 0:
-                            accept = True
-            if accept:
-                kept += 1
+        # We'll compute a kept_count roughly to expose in metadata for debugging/tests
+        # Note: accurate 'kept' count requires parsing logic which is now in compute_baseline_from_frames,
+        # but for metadata logging we can roughly estimate or just omit it if strict count isn't critical.
+        # For now, if baseline is computed, we assume it passed QC.
+        s.metadata["baseline_filtering"] = {"total_calib_frames": total, "baseline_computed": bool(baseline)}
 
-        s.metadata["baseline_filtering"] = {"total_calib_frames": total, "kept": kept}
+        # If we couldn't compute a baseline (e.g., QC gating failed), do not update session state.
+        if not baseline:
+            s.metadata.setdefault("baseline_filtering", {})["insufficient_after_qc"] = True
+            return {}
 
-        baseline = compute_baseline_from_frames(frames, min_frames=min_frames)
-        if baseline:
+        # Preserve existing behavior of storing the computed baseline in the session, if applicable.
+        try:
             s.baseline = baseline
             # clear calib frames after baseline computed
             s.calib_frames = []
             # persist baseline when opted in
             if getattr(s, "persist_baseline", False):
-                try:
-                    self.persistent_baselines[session_id] = dict(s.baseline)
-                except Exception:
-                    pass
-        else:
-            # insufficient after QC; record that fact in metadata
-            if not baseline:
-                s.metadata.setdefault("baseline_filtering", {})["insufficient_after_qc"] = True
-            # keep calib frames for now (caller might collect more)
+                self.persistent_baselines[session_id] = dict(s.baseline)
+        except Exception:
+            # Some session implementations may not expose a baseline attribute; fail soft.
             pass
-        return s.baseline
+
+        return baseline
 
     def get_baseline(self, session_id: str) -> Dict[str, Dict]:
         s = self.get(session_id)

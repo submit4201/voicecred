@@ -22,10 +22,13 @@ def compute_baseline_from_frames(
     # if frames list empty -> nothing to compute
     if not frames:
         return {}
+    
+    if min_frames is not None and len(frames) < min_frames:
+        return {}
 
     # If production policy is enabled, require a minimum total voiced_seconds
     if use_production_policy:
-        total_voiced = 0.0
+        total_voiced = 0.0        
         for f in frames:
             qc = f.get("qc") if isinstance(f, dict) else None
             try:

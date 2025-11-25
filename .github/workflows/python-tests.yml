@@ -5,7 +5,6 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  # allow manual invocation to run heavy tests (requires repo secrets/HF_HUB_TOKEN for private model access)
   workflow_dispatch:
     inputs:
       run_heavy:
@@ -17,44 +16,46 @@ jobs:
   tests:
     runs-on: [self-hosted, windows, x64]
     steps:
-      - name: Allow PowerShell scripts (Windows only)
-      - if: runner.os == 'Windows'
+      - name: Set execution policy (Windows only)
+        if: runner.os == 'Windows'
         shell: powershell
         run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
       - uses: actions/checkout@v4
-      - name: Set up Python 3.11
+
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12.9'
+          python-version: '3.12'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run tests
         env:
-          # prevent heavy pyannote tests from running by default in CI
           RUN_HEAVY_PYANNOTE: '0'
-        run: |
-           python -m pytest tests/
+        run: python -m pytest tests/
 
   heavy-tests:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_heavy == 'true' }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12.9'
+          python-version: '3.12'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # check for test
+
       - name: Run heavy pyannote tests
         env:
           RUN_HEAVY_PYANNOTE: '1'
-          # HF token should be added to repo secrets if private models are used
           HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_HUB_TOKEN }}
-        run: |
-          pytest -q
+        run: pytest -q

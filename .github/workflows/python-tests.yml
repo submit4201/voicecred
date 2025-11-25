@@ -15,6 +15,16 @@ on:
 jobs:
   tests:
     runs-on: [self-hosted, windows, x64]
+    on: [push]
+
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run with explicit powershell.exe bypass
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\ci.ps1
+        # use shell: cmd or leave default - this runs powershell.exe directly
     steps:
       - name: Set execution policy (Windows only)
         if: runner.os == 'Windows'

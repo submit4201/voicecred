@@ -1,7 +1,4 @@
-<<|----comment----|>>
-if you see "<<|----comment----|>>" you dhould stop and take not of the information between"<<|----comment----|>>" those are comments from mee about changes id like done
-
-<<|----comment----|>>
+<!-- User comments removed: Use the document to communicate changes; any inline markers were removed to keep docs clean. -->
 
 # VoiceCred — Detailed Project Overview
 
@@ -43,11 +40,8 @@ The design choices prioritize testability (deterministic mocks), a minimal depen
    - Acoustic extraction: runs `acoustic.AcousticEngine.process_batch_async()` to extract low-dim acoustic features and QC metrics.
    - Send `acoustic_batch` websocket event.
    
-   - Run STT: call `stt_adapter.transcribe()` (uses `MockSTTAdapter` by default)
-   <<|----comment----|>>
-   please change this to  an adaptorc that works `WhisperSTTAdapter` i suppose 
-   <<|----comment----|>>
-   ; results saved in session store and sent as `asr_batch`.
+  - Run STT: call `stt_adapter.transcribe()` (adapter selected by `STT_ADAPTER` environment variable; default is `mock` in tests; set `STT_ADAPTER=whisper` to use `WhisperSTTAdapter` in integration setups — note that Whisper may require heavy dependencies and model downloads).
+  ; results saved in session store and sent as `asr_batch`.
    
    - Optionally gate linguistic analysis by ASR confidence (`MIN_ASR_CONF`) — run `linguistic.LinguisticEngine.analyze()` and emit `linguistic_batch`.
    - Assemble feature frames: use `assembler.assemble_feature_frame(session_id, acoustic, linguistics, timestamp)`.

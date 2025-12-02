@@ -9,15 +9,14 @@ The content includes both Mermaid diagrams (renderable on GitHub & many editors)
 ## Component Diagram (Mermaid)
 ```mermaid
 graph LR
-  Client[Client (WebSocket)] -->|connect| App[FastAPI: voicecred.main]
+  Client --> Connect --> App[fastapi.FastAPI]
   App --> SessionStore[InMemorySessionStore]
   App --> Acoustic[AcousticEngine]
-  App --> STTAdapter[STTAdapter (Mock/Whisper/Remote)]
+  App --> STTAdapter[STTAdapter]
   App --> Linguistic[LinguisticEngine]
   App --> Assembler[assembler.assemble_feature_frame]
   App --> Scorer[Scorer]
-  App --> Tests[tests/
-    (Mock adapters)]
+  App --> Tests[tests]
 ```
 
 ### Notes
@@ -26,6 +25,8 @@ graph LR
 
 ---
 
+<!-- [MermaidChart: 76c27082-f609-4aa3-b222-d71a4855be6e] -->
+<!-- [MermaidChart: 76c27082-f609-4aa3-b222-d71a4855be6e] -->
 ## High-level Sequence Diagram (Mermaid)
 ```mermaid
 sequenceDiagram
@@ -71,9 +72,8 @@ sequenceDiagram
 ## PlantUML Class Diagram (source)
 Below is a PlantUML class diagram source for key classes and their main public methods. You can paste it into an online PlantUML editor or generate PNG/SVG with PlantUML locally.
 
-```plantuml
-@startuml
-skinparam classAttributeIconSize 0
+```mermaid
+classDiagram
 class InMemorySessionStore {
   +create_session(session_id=None): SessionState
   +get(session_id): SessionState
@@ -141,7 +141,6 @@ AcousticEngine -- Assembler : returns acoustic features
 STTAdapter -- LinguisticEngine : provides transcripts
 LinguisticEngine -- Assembler : returns linguistic features
 Assembler -- Scorer : normalized & scoring inputs
-@enduml
 ```
 
 Replace `WSApp` with `FastAPI main` when rendering to annotate the orchestrating application.
@@ -155,6 +154,11 @@ If you want to render PlantUML diagrams locally, install PlantUML and Graphviz (
 # Example: generate PNG from PlantUML text file
 plantuml -tpng docs/architecture.puml
 ```
+
+### PNG / SVG exports
+![Architecture Diagram](../docs/diagrams/architecture.png)
+<!-- For SVG viewing: -->
+<img src="../docs/diagrams/architecture.svg" alt="Architecture Diagram" width="800" />
 
 For Mermaid diagrams, many Markdown editors (including GitHub) can automatically render them when enclosed in ` ```mermaid ` blocks.
 

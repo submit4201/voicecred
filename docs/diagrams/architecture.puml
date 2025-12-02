@@ -1,0 +1,70 @@
+@startuml
+skinparam classAttributeIconSize 0
+class InMemorySessionStore {
+  +create_session(session_id=None): SessionState
+  +get(session_id): SessionState
+  +add_frame(session_id, frame)
+  +add_calib_frame(session_id, frame)
+  +pop_frames(session_id): list
+  +pop_calib_frames(session_id, max_n=None)
+  +compute_and_store_baseline(session_id, min_frames=3): dict
+  +add_asr_result(session_id, asr)
+  +add_feature_frame(session_id, frame)
+  +finalize(session_id): dict
+}
+
+class SessionState {
+  +session_id: str
+  +state: str  # idle|calibrating|scoring|finalized
+  +calib_frames: list
+  +last_frames: list
+  +asr_results: list
+  +feature_frames: list
+  +baseline: dict
+  +scoring_state: dict
+}
+
+class AcousticEngine {
+  +process_frame(pcm, timestamp_ms)
+  +process_batch(frames): list
+  +process_batch_async(frames): list
+}
+
+class STTAdapter <<Interface>> {
+  +transcribe(frames)
+}
+
+class MockSTTAdapter {
+  +transcribe(frames)
+}
+
+class WhisperSTTAdapter {
+  +transcribe(frames)
+}
+
+class LinguisticEngine {
+  +analyze(asr_result, timestamp_ms)
+}
+
+class Scorer {
+  +compute(frame, baseline)
+  +update_ema(scoring_state, raw)
+}
+
+class Assembler {
+  +assemble_feature_frame(session_id, acoustic, linguistic, timestamp_ms)
+}
+
+InMemorySessionStore "1" *-- "*" SessionState
+WSApp ..> InMemorySessionStore : uses
+WSApp ..> AcousticEngine : uses
+WSApp ..> STTAdapter : delegates
+WSApp ..> LinguisticEngine : uses
+WSApp ..> Assembler : uses
+WSApp ..> Scorer : uses
+
+AcousticEngine -- Assembler : returns acoustic features
+STTAdapter -- LinguisticEngine : provides transcripts
+LinguisticEngine -- Assembler : returns linguistic features
+Assembler -- Scorer : normalized & scoring inputs
+@enduml
